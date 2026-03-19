@@ -1,0 +1,9 @@
+{
+  "name": "dev-workflow",
+  "description": "Tech-agnostic orchestration agents and adaptive skills for any project stack",
+  "version": "0.1.0",
+  "author": {
+    "name": "your-username"
+  },
+  "hooks": "hooks/hooks.json"
+}
