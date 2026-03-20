@@ -8,10 +8,11 @@ Supports: Node.js (JS/TS), Python, .NET (C#), Go, Java, Ruby.
 
 ## What it does
 
-- Routes work through a fixed agent pipeline based on intent (feature, bug, question)
+- Routes work through a fixed agent pipeline based on intent (feature, bug, refactor, docs, question)
 - Enforces TDD: tests are written before implementation
 - Runs a security and quality review before every PR
-- Adapts terminal commands, file conventions, DB/ORM rules, and frontend contract rules to the current stack
+- Adapts terminal commands, file conventions, DB/ORM rules, and API contract rules to the current stack
+- Integrates with task trackers (ClickUp, Jira, GitHub, Linear) for checkpointing
 - Optionally runs a post-edit build/lint check after every file write
 
 ---
@@ -141,6 +142,23 @@ Orchestrator
   └── Orchestrator     creates PR
 ```
 
+### Refactor workflow
+
+```
+Orchestrator
+  └── implementation   refactors code (existing tests must stay green)
+  └── review-security  checks for unintended behavior drift
+  └── Orchestrator     creates PR
+```
+
+### Docs workflow (opt-in)
+
+```
+Orchestrator
+  └── docs             writes or updates documentation
+  └── Orchestrator     creates PR
+```
+
 ### Question
 
 Answered directly by the orchestrator using the `read-codebase` skill. No agents invoked.
@@ -155,10 +173,11 @@ Skills are loaded by agents as needed. They are not user-invocable (except `init
 |-------|-----------|---------|
 | `init` | User (`/dev-workflow:init`) | Project configuration wizard |
 | `read-codebase` | All agents | Stack-aware codebase navigation conventions |
-| `write-edit-files` | qa, implementation, bugfix, review-security | Stack-aware file writing conventions |
+| `write-edit-files` | qa, implementation, bugfix, review-security, docs | Stack-aware file writing conventions |
 | `run-terminal` | qa, implementation, bugfix, review-security | Stack-aware build/test/install commands |
 | `database-conventions` | implementation, bugfix, review-security | ORM-specific query safety rules |
 | `api-architecture-contracts` | architect, review-security | API contract rules (inward for frontend, outward for backend) |
+| `clickup` | orchestrator (when `task_tracker: clickup`) | ClickUp task/doc management via API |
 
 ---
 
@@ -190,6 +209,7 @@ When enabled, `post-edit.sh` runs a lightweight check after every file write or 
     implementation-agent.md  # Implements code (TDD green)
     review-security-agent.md # Security and quality gate
     bugfix-agent.md          # Reproduces and patches bugs
+    docs-agent.md            # Writes/updates documentation (opt-in)
   skills/
     init/SKILL.md            # Configuration wizard
     read-codebase/SKILL.md   # Codebase navigation conventions
@@ -197,6 +217,12 @@ When enabled, `post-edit.sh` runs a lightweight check after every file write or 
     run-terminal/SKILL.md    # Terminal command conventions
     database-conventions/SKILL.md   # DB/ORM safety rules
     api-architecture-contracts/SKILL.md # API contract awareness
+    clickup/                 # ClickUp task tracker integration
+      SKILL.md               # Command reference
+      INSTRUCTIONS.md        # Setup guide
+      query.mjs              # CLI entry point
+      api/                   # API client modules
+      lib/                   # Formatting and parsing helpers
   scripts/
     detect-stack.sh          # Stack detection and config loading
     codebase-conventions.sh  # Generates read-codebase skill content
