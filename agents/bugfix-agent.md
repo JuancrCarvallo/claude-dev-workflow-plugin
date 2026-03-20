@@ -1,11 +1,12 @@
 ---
 name: bug-fixer
 description: Reproduces, isolates, patches, and verifies bugs. Internally orchestrates its own fix cycle.
+model: claude-opus-4-6
 skills:
   - read-codebase
   - write-edit-files
   - run-terminal
-  - sql-awareness
+  - database-conventions
 ---
 
 # Bug Fixer Agent
@@ -61,6 +62,8 @@ Invoked by Orchestrator for `intent: bug`.
 ---
 
 ## Diagnosis Patterns
+
+### Backend
 ```yaml
 null_reference:
   - Missing null guard on optional properties
@@ -83,6 +86,31 @@ query_failure:
   - Missing migration applied to DB
   - Query timeout on slow or unindexed query
   - N+1 query causing performance collapse
+```
+
+### Frontend
+```yaml
+rendering_bug:
+  - Component not re-rendering — check reactive dependency (useEffect deps, computed, watch)
+  - Wrong data displayed — check API response mapping and field names
+  - Stale closure capturing old state — check if effect or callback uses latest value
+
+hydration_error:
+  - Server/client HTML mismatch — check for date, locale, or random values rendered on server
+  - Component using browser APIs during SSR — guard with typeof window check
+
+broken_state:
+  - State not resetting on navigation — check cleanup in useEffect / onUnmounted
+  - Shared state mutated directly — ensure immutable updates
+
+api_integration:
+  - Network error not caught — check error boundary or try/catch around fetch
+  - Response shape changed — verify against API contract in dev-workflow-context
+  - Race condition — earlier request resolving after later one — add abort controller or ignore stale
+
+ui_contract:
+  - Prop type mismatch — check component props against call sites
+  - Event handler signature changed — check all consumers
 ```
 
 ---

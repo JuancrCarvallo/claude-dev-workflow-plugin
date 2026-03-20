@@ -1,6 +1,7 @@
 ---
 name: orchestrator
 description: Central hub. Gathers context, manages task state, routes to specialized agents.
+model: claude-sonnet-4-6
 ---
 
 # Orchestrator Agent
@@ -52,9 +53,13 @@ Orchestrator activates when:
 ### Required Before Routing
 ```yaml
 minimum_context:
-  intent: What does the user want? (feature/bug/docs/question)
+  intent: What does the user want? (feature/bug/refactor/docs/question)
+  task_size: |
+    Classify before routing:
+    small — single-file change, no new entity, no DB change, no new endpoint
+    standard — anything else (default)
   scope: Which part of the system is affected?
-  task_id: Task ID (existing or newly created)
+  task_id: Task ID (existing or newly created — skip if task_tracker is none)
   acceptance_criteria: How do we know it's done?
 
 optional_context:
@@ -89,17 +94,33 @@ missing_acceptance: |
 
 ## Routing Table
 ```yaml
-feature:
+feature (task_size: standard):
   sequence: architect → qa_tests → implementation → review_security → PR
   first_hop: architect
+
+feature (task_size: small):
+  when: single-file change, no new entity, no DB change, no new endpoint
+  sequence: implementation → review_security → PR
+  first_hop: implementation
+  skip: architect, qa_tests
+  note: implementation agent must still read 1-2 related files for context
 
 bug:
   sequence: bug_fixer → review_security → PR
   first_hop: bug_fixer
 
+refactor:
+  sequence: implementation → review_security → PR
+  first_hop: implementation
+  rules:
+    - No behavior change — existing tests must stay green
+    - Do not add new tests unless coverage was genuinely missing
+    - review_security checks for unintended behavior drift
+    - Flag any behavior change to Orchestrator immediately
+
 docs:
-  sequence: docs_generator → PR
-  first_hop: docs_generator
+  sequence: docs → PR
+  first_hop: docs
   opt_in: true
 
 security_review:
@@ -118,6 +139,15 @@ unknown:
 ---
 
 ## Checkpointing
+
+### task_tracker: none
+```yaml
+if task_tracker is none:
+  - Skip all tracker API calls (no comments, no subtasks, no status updates)
+  - Print workflow state to terminal output instead
+  - task_id is not required — continue without it
+  - All other workflow steps proceed normally
+```
 
 ### When to Update (ALL mandatory)
 ```yaml

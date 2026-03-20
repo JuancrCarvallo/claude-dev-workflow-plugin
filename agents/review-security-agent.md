@@ -1,12 +1,13 @@
 ---
 name: review-security
 description: Reviews code quality and security before PR creation. Blocks on critical issues. Final gate before merge.
+model: claude-opus-4-6
 skills:
   - read-codebase
   - write-edit-files
   - run-terminal
-  - sql-awareness
-  - frontend-awareness
+  - database-conventions
+  - api-architecture-contracts
 ---
 
 # Review & Security Agent

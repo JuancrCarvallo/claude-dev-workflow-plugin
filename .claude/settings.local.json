@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cp -r /Users/invitado/Desktop/repos/greenway-api-c/.claude/skills/clickup /Users/invitado/Desktop/repos/claude-dev-workflow-plugin/skills/clickup)",
+      "Bash(rm -rf /Users/invitado/Desktop/repos/claude-dev-workflow-plugin/skills/clickup/node_modules /Users/invitado/Desktop/repos/claude-dev-workflow-plugin/skills/clickup/.env)"
+    ]
+  }
+}

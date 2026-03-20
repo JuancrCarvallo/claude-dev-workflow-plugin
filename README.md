@@ -157,8 +157,8 @@ Skills are loaded by agents as needed. They are not user-invocable (except `init
 | `read-codebase` | All agents | Stack-aware codebase navigation conventions |
 | `write-edit-files` | qa, implementation, bugfix, review-security | Stack-aware file writing conventions |
 | `run-terminal` | qa, implementation, bugfix, review-security | Stack-aware build/test/install commands |
-| `sql-awareness` | implementation, bugfix, review-security | ORM-specific query safety rules |
-| `frontend-awareness` | architect, review-security | API contract rules (inward for frontend, outward for backend) |
+| `database-conventions` | implementation, bugfix, review-security | ORM-specific query safety rules |
+| `api-architecture-contracts` | architect, review-security | API contract rules (inward for frontend, outward for backend) |
 
 ---
 
@@ -195,15 +195,15 @@ When enabled, `post-edit.sh` runs a lightweight check after every file write or 
     read-codebase/SKILL.md   # Codebase navigation conventions
     write-edit-files/SKILL.md# File writing conventions
     run-terminal/SKILL.md    # Terminal command conventions
-    sql-awareness/SKILL.md   # DB/ORM safety rules
-    frontend-awareness/SKILL.md # API contract awareness
+    database-conventions/SKILL.md   # DB/ORM safety rules
+    api-architecture-contracts/SKILL.md # API contract awareness
   scripts/
     detect-stack.sh          # Stack detection and config loading
     codebase-conventions.sh  # Generates read-codebase skill content
     write-conventions.sh     # Generates write-edit-files skill content
     terminal-conventions.sh  # Generates run-terminal skill content
-    sql-conventions.sh       # Generates sql-awareness skill content
-    frontend-awareness.sh    # Generates frontend-awareness skill content
+    sql-conventions.sh       # Generates database-conventions skill content
+    api-architecture-contracts.sh    # Generates api-architecture-contracts skill content
     post-edit.sh             # Post-edit build/lint hook
   hooks/
     hooks.json               # Hook definitions
@@ -216,7 +216,7 @@ When enabled, `post-edit.sh` runs a lightweight check after every file write or 
 ## Adding a new stack
 
 1. Add detection logic to `scripts/detect-stack.sh` (new `elif` branch in the auto-detect section).
-2. Add a `case` branch to each of the five convention scripts (`terminal-conventions.sh`, `codebase-conventions.sh`, `write-conventions.sh`, `sql-conventions.sh`, and optionally `frontend-awareness.sh`).
+2. Add a `case` branch to each of the five convention scripts (`terminal-conventions.sh`, `codebase-conventions.sh`, `write-conventions.sh`, `sql-conventions.sh`, and optionally `api-architecture-contracts.sh`).
 3. Add the new stack option to `skills/init/SKILL.md` so the wizard presents it.
 
 ---

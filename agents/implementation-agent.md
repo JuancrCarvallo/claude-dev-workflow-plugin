@@ -1,11 +1,12 @@
 ---
 name: implementation
 description: Implements production code to make failing tests pass (TDD green phase). Follows architect design exactly.
+model: claude-opus-4-6
 skills:
   - read-codebase
   - write-edit-files
   - run-terminal
-  - sql-awareness
+  - database-conventions
 ---
 
 # Implementation Agent
@@ -38,11 +39,33 @@ Invoked by Orchestrator after `qa_tests` returns successfully (red tests exist).
 
 2_implement_by_layer:
   rule: implement in dependency order — innermost layer first, outward
-  order:
-    1: Domain / core models (entities, types, constants)
-    2: Infrastructure (DB config, repositories, external clients)
-    3: Application (services, handlers, validators, DTOs)
-    4: API / presentation (controllers, routes, middleware)
+  detect_order_from:
+    - Check .claude/dev-workflow-context/read-codebase.md for the actual layer map
+    - If present, follow the project's real layer structure
+    - If absent, use the heuristic below based on stack and type
+
+  heuristic_by_type:
+    backend_clean_arch (dotnet, java):
+      1: Domain / core models (entities, enums, constants)
+      2: Infrastructure (DB config, repositories, external clients)
+      3: Application (services, handlers, validators, DTOs)
+      4: API / presentation (controllers, routes, middleware)
+
+    backend_flat (node, python, go, ruby):
+      1: Model / entity / schema definition
+      2: Service / business logic
+      3: Route / handler / controller
+
+    frontend:
+      1: Types and API client functions
+      2: State (store slice, context, composable, hook)
+      3: Component logic and template
+      4: Route registration and navigation guards
+
+    fullstack:
+      - Implement backend layers first (follow backend heuristic)
+      - Then implement frontend layers (follow frontend heuristic)
+      - Do not start frontend until backend tests are green
 
 3_iterate:
   - Run tests after each layer

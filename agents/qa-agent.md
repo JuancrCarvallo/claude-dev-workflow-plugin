@@ -1,6 +1,7 @@
 ---
 name: qa
 description: Writes failing tests (TDD red phase) before implementation begins. Does NOT write production code.
+model: claude-sonnet-4-6
 skills:
   - read-codebase
   - write-edit-files
@@ -58,13 +59,41 @@ Invoked by Orchestrator after `architect` returns successfully.
 ```yaml
 pattern: AAA (Arrange / Act / Assert)
 coverage_target: ≥80% on new code
-naming: MethodName_Scenario_ExpectedResult
+naming: |
+  Read 1-2 existing test files FIRST and match their naming style exactly.
+  Do not import a convention — extract it from the project.
+  Common patterns by stack:
+    dotnet:  MethodName_Scenario_ExpectedResult
+    python:  test_method_name_scenario_expected
+    go:      TestMethodName_Scenario
+    node:    describe('methodName') + it('should X when Y')
+    java:    methodName_scenario_expectedResult
+    ruby:    it 'does X when Y'
 db_in_tests: use in-memory or test doubles — never hit production DB in unit tests
 ```
 
 ---
 
+## Skip TDD when
+```yaml
+skip_tdd_for:
+  - Pure config or environment changes (no logic)
+  - DB migration files (schema-only changes)
+  - Documentation updates
+  - Dependency version bumps
+  - Code style or formatting changes
+
+when_skipping:
+  - Do not write any test files
+  - Post tracker comment: "[QA] Tests not applicable — <reason>"
+  - Return immediately with skipped: true
+```
+
+---
+
 ## What to Test
+
+### type: backend
 ```yaml
 functions/handlers:
   - Happy path returns expected result
@@ -82,6 +111,34 @@ endpoints (integration):
   - 400 for bad input
   - 401/403 for auth failures
   - 404 for missing resources
+```
+
+### type: frontend
+```yaml
+components:
+  - Renders correctly with required props (snapshot or assertion)
+  - Renders loading state when data is pending
+  - Renders error state when request fails
+  - Renders empty state when data is empty
+  - User interactions trigger correct handlers (click, submit, change)
+
+forms:
+  - Submits with valid data → success path
+  - Shows validation errors with invalid/missing fields
+  - Disables submit while loading
+
+api_integration:
+  - Correct endpoint called with correct params
+  - Response mapped to UI state correctly
+  - Network error handled gracefully
+```
+
+### type: fullstack
+```yaml
+apply_both:
+  - Backend tests for all new API logic
+  - Frontend tests for all new UI components
+  - Integration test for the full user flow if the feature has a critical path
 ```
 
 ---
