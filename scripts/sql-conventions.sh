@@ -10,12 +10,16 @@ if [ "$DATABASE" != "true" ]; then
 fi
 
 cat << EOF
-## Database: $DB_ENGINE | ORM: $ORM
+## Database: $DB_ENGINE
 EOF
 
-case "$ORM" in
-  prisma)
-    cat << EOF
+# ─── Per-ORM conventions ────────────────────────────────────────────────────
+_emit_orm_conventions() {
+  local orm="$1"
+
+  case "$orm" in
+    prisma)
+      cat << EOF
 
 ### Prisma conventions
 - Schema lives in \`prisma/schema.prisma\`
@@ -26,14 +30,14 @@ case "$ORM" in
 - Never run \`prisma migrate deploy\` without explicit human consent
 
 ### Safety rules
-- Always use parameterized queries when using \`$queryRaw\` or \`$executeRaw\`
+- Always use parameterized queries when using \`\$queryRaw\` or \`\$executeRaw\`
 - Never interpolate user input into \`\$queryRaw\` template literals
 - Filter by ownership before returning records (prevent IDOR)
 EOF
-    ;;
+      ;;
 
-  typeorm)
-    cat << EOF
+    typeorm)
+      cat << EOF
 
 ### TypeORM conventions
 - Use Repository pattern — inject via \`@InjectRepository(Entity)\`
@@ -46,10 +50,10 @@ EOF
 - Always use parameterized queries: \`.where("field = :value", { value })\`
 - Never use \`.where(\`field = \${userInput}\`)\` — SQL injection risk
 EOF
-    ;;
+      ;;
 
-  sequelize)
-    cat << EOF
+    sequelize)
+      cat << EOF
 
 ### Sequelize conventions
 - Define models with associations in \`src/models/\`
@@ -61,10 +65,51 @@ EOF
 - Never pass user input directly into \`where\` string clauses
 - Use \`Op\` operators for complex conditions, not raw strings
 EOF
-    ;;
+      ;;
 
-  sqlalchemy)
-    cat << EOF
+    eloquent)
+      cat << EOF
+
+### Eloquent conventions (Laravel)
+- Models live in \`app/Models/\` — extend \`Illuminate\Database\Eloquent\Model\`
+- Use Eloquent query builder: \`Model::where('field', value)->get()\`
+- Never concatenate user input into \`whereRaw()\` or \`DB::raw()\` strings
+- Relationships: define in model methods (\`hasMany\`, \`belongsTo\`, etc.)
+- Transactions: \`DB::transaction(function () { ... })\`
+- Migrations: \`php artisan make:migration name\` — timestamped, never edit existing
+- Never run \`php artisan migrate:fresh\` or \`db:wipe\` without explicit human consent
+
+### Safety rules
+- Always use parameterized queries: \`->where('field', '=', \$value)\` or \`->whereRaw('field = ?', [\$value])\`
+- Never: \`->whereRaw("field = '\$userInput'")\` — SQL injection risk
+- Use \`\$fillable\` or \`\$guarded\` on every model to prevent mass assignment
+- Filter by ownership before returning records (prevent IDOR)
+- Use \`firstOrFail()\` / \`findOrFail()\` to avoid null dereferences
+EOF
+      ;;
+
+    doctrine)
+      cat << EOF
+
+### Doctrine conventions (Symfony)
+- Entities live in \`src/Entity/\` — managed by Doctrine ORM
+- Use DQL (Doctrine Query Language) or QueryBuilder for complex queries
+- Never concatenate user input into DQL strings
+- Repositories: extend \`ServiceEntityRepository\` in \`src/Repository/\`
+- Transactions: \`\$entityManager->wrapInTransaction(function () { ... })\`
+- Migrations: \`php bin/console doctrine:migrations:diff\` to generate, \`migrate\` to apply
+- Never run migrations in production without explicit human consent
+
+### Safety rules
+- Always use named parameters: \`->where('e.field = :value')->setParameter('value', \$value)\`
+- Never: \`->where("e.field = '\$userInput'")\` — SQL injection risk
+- Use Doctrine lifecycle callbacks or event listeners, not raw SQL triggers
+- Filter by ownership before returning records
+EOF
+      ;;
+
+    sqlalchemy)
+      cat << EOF
 
 ### SQLAlchemy conventions
 - Use ORM-style queries: \`session.query(Model).filter_by(...)\`
@@ -77,10 +122,10 @@ EOF
 ### Safety rules
 - Parameterize all raw SQL: \`text("SELECT * FROM t WHERE id = :id")\` with \`{"id": value}\`
 EOF
-    ;;
+      ;;
 
-  efcore)
-    cat << EOF
+    efcore)
+      cat << EOF
 
 ### EF Core conventions
 - Use LINQ expressions — never string-interpolate into \`FromSqlRaw\`
@@ -94,10 +139,10 @@ EOF
 - Never use \`FromSqlInterpolated\` with user input — use \`FromSqlRaw\` with parameters
 - Always filter by ownership before returning records
 EOF
-    ;;
+      ;;
 
-  gorm)
-    cat << EOF
+    gorm)
+      cat << EOF
 
 ### GORM conventions
 - Use struct conditions or named parameters — never raw string interpolation
@@ -109,10 +154,10 @@ EOF
 - Never: \`db.Where(fmt.Sprintf("name = '%s'", userInput))\`
 - Always: \`db.Where("name = ?", userInput)\`
 EOF
-    ;;
+      ;;
 
-  hibernate)
-    cat << EOF
+    hibernate)
+      cat << EOF
 
 ### Hibernate / JPA conventions
 - Use Spring Data repositories for standard CRUD
@@ -124,10 +169,10 @@ EOF
 - Named parameters only: \`@Query("SELECT u FROM User u WHERE u.name = :name")\`
 - Never: \`"SELECT * FROM users WHERE name = '" + name + "'"\`
 EOF
-    ;;
+      ;;
 
-  activerecord)
-    cat << EOF
+    activerecord)
+      cat << EOF
 
 ### ActiveRecord conventions
 - Use relation methods: \`.where(field: value)\` hash syntax
@@ -140,10 +185,10 @@ EOF
 - Always use hash conditions or \`?\` placeholders
 - Sanitize before using in raw SQL with \`ActiveRecord::Base.sanitize_sql\`
 EOF
-    ;;
+      ;;
 
-  *)
-    cat << EOF
+    *)
+      cat << EOF
 
 ### General SQL safety rules
 - Never interpolate user input into SQL strings
@@ -151,8 +196,25 @@ EOF
 - Wrap multi-step operations in transactions
 - Never apply schema changes to production without explicit human consent
 EOF
-    ;;
-esac
+      ;;
+  esac
+}
+
+# ─── Main output ─────────────────────────────────────────────────────────────
+if [ "$STACK_COUNT" -gt 1 ]; then
+  # Emit ORM conventions for each stack that has one
+  for i in $(seq 0 $((STACK_COUNT - 1))); do
+    _orm_var="STACK_${i}_ORM"
+    _name_var="STACK_${i}_NAME"
+    if [ -n "${!_orm_var}" ]; then
+      echo ""
+      echo "### ORM: ${!_orm_var} (${!_name_var})"
+      _emit_orm_conventions "${!_orm_var}"
+    fi
+  done
+else
+  _emit_orm_conventions "$ORM"
+fi
 
 cat << EOF
 

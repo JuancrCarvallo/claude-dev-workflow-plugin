@@ -69,9 +69,42 @@ This project contains both frontend and backend. Verify which layer is being cha
 EOF
     ;;
 
+  monolith)
+    cat << 'EOF'
+## Role: Monolith (multiple stacks, single repo)
+
+This project contains backend and frontend code in different stacks within the same repository.
+
+### If changing the backend (PHP / server-side)
+- Never remove or rename a response field without checking frontend usage
+- Grep the frontend JS/CSS/template files for the field or endpoint before removing it
+- Keep error response shapes and HTTP status codes consistent
+- Server-rendered views (Blade, Twig, ERB) and API endpoints may share controllers — check both consumers
+- Adding new optional fields or endpoints is safe
+
+### If changing the frontend (JS / assets / templates)
+- Follow the API contract — do not assume response shapes changed
+- Do not hardcode API URLs — use routes/config provided by the backend
+- Do not expose tokens, keys, or CSRF tokens in client-side JS (except in meta tags where the framework provides them)
+- jQuery AJAX calls: check the response shape matches what the backend returns
+
+### Cross-cutting
+- Keep date formats consistent between server-rendered views and API responses
+- Keep pagination contracts stable
+- Server-rendered HTML and API JSON may coexist on the same controller — be aware of both
+- CSRF protection: ensure forms and AJAX requests include the CSRF token
+
+### Flag to human when
+- A backend route or response field changes that frontend JS depends on
+- A Blade/Twig variable is removed that templates reference
+- Auth middleware is added or removed from an existing route
+- An endpoint switches between HTML and JSON response
+EOF
+    ;;
+
   *)
     cat << 'EOF'
-Project type not configured. Run `/dev-workflow:init` to set frontend/backend/fullstack.
+Project type not configured. Run `/dev-workflow:init` to set frontend/backend/fullstack/monolith.
 
 Generic frontend awareness rules:
 - Do not break existing API contracts without coordinating with consumers

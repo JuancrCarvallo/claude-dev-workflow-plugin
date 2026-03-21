@@ -2,7 +2,9 @@
 
 A Claude Code plugin that provides a tech-agnostic development workflow. It orchestrates specialized agents through a structured pipeline (architect → QA → implementation → security review → PR) and adapts all conventions to the detected project stack automatically.
 
-Supports: Node.js (JS/TS), Python, .NET (C#), Go, Java, Ruby.
+Supports: Node.js (JS/TS), PHP (Laravel, Symfony), Python, .NET (C#), Go, Java, Ruby.
+
+Supports monolith repos with multiple stacks (e.g. PHP + jQuery, Rails + React).
 
 ---
 
@@ -12,6 +14,7 @@ Supports: Node.js (JS/TS), Python, .NET (C#), Go, Java, Ruby.
 - Enforces TDD: tests are written before implementation
 - Runs a security and quality review before every PR
 - Adapts terminal commands, file conventions, DB/ORM rules, and API contract rules to the current stack
+- Supports monolith projects with multiple stacks — conventions for each stack are emitted together, post-edit hook dispatches by file extension
 - Integrates with task trackers (ClickUp, Jira, GitHub, Linear) for checkpointing
 - Optionally runs a post-edit build/lint check after every file write
 
@@ -83,7 +86,9 @@ This walks you through a short configuration wizard and writes `.claude/dev-work
 
 ## Configuration file
 
-The init skill writes `.claude/dev-workflow.json` at the project root. You can also create or edit it manually:
+The init skill writes `.claude/dev-workflow.json` at the project root. You can also create or edit it manually.
+
+### Single-stack projects
 
 ```json
 {
@@ -102,21 +107,58 @@ The init skill writes `.claude/dev-workflow.json` at the project root. You can a
 }
 ```
 
+### Monolith projects (multiple stacks)
+
+```json
+{
+  "type": "monolith",
+  "stacks": [
+    {
+      "name": "php",
+      "role": "backend",
+      "stack_detail": "laravel",
+      "package_manager": "composer",
+      "test_framework": "phpunit",
+      "orm": "eloquent"
+    },
+    {
+      "name": "node",
+      "role": "frontend",
+      "stack_detail": "javascript",
+      "package_manager": "npm",
+      "test_framework": null,
+      "orm": null
+    }
+  ],
+  "database": true,
+  "db_engine": "mysql",
+  "orm": "eloquent",
+  "task_tracker": "none",
+  "base_branch": "dev",
+  "branch_prefix": ""
+}
+```
+
+### Field reference
+
 | Field | Values |
 |-------|--------|
-| `type` | `backend` \| `frontend` \| `fullstack` |
-| `stack` | `node` \| `python` \| `dotnet` \| `go` \| `java` \| `ruby` \| `other` |
-| `stack_detail` | `typescript` \| `javascript` (node only) |
-| `package_manager` | `npm` \| `yarn` \| `pnpm` \| `pip` \| `poetry` \| `uv` \| `dotnet` \| `go` \| `maven` \| `gradle` \| `gem` |
-| `test_framework` | `jest` \| `vitest` \| `pytest` \| `xunit` \| `go test` \| `junit` \| `rspec` |
+| `type` | `backend` \| `frontend` \| `fullstack` \| `monolith` |
+| `stack` | `node` \| `php` \| `python` \| `dotnet` \| `go` \| `java` \| `ruby` \| `other` |
+| `stacks` | Array of stack objects (monolith only — see format above) |
+| `stacks[].name` | `node` \| `php` \| `python` \| `dotnet` \| `go` \| `java` \| `ruby` \| `js-assets` \| `other` |
+| `stacks[].role` | `backend` \| `frontend` |
+| `stack_detail` | `typescript` \| `javascript` \| `laravel` \| `symfony` (varies by stack) |
+| `package_manager` | `npm` \| `yarn` \| `pnpm` \| `pip` \| `poetry` \| `uv` \| `dotnet` \| `go` \| `maven` \| `gradle` \| `gem` \| `composer` |
+| `test_framework` | `jest` \| `vitest` \| `pytest` \| `xunit` \| `phpunit` \| `pest` \| `go test` \| `junit` \| `rspec` |
 | `database` | `true` \| `false` |
 | `db_engine` | `postgres` \| `mysql` \| `sqlite` \| `sqlserver` \| `mongodb` \| `other` |
-| `orm` | `prisma` \| `typeorm` \| `sequelize` \| `sqlalchemy` \| `efcore` \| `gorm` \| `hibernate` \| `activerecord` |
+| `orm` | `prisma` \| `typeorm` \| `sequelize` \| `eloquent` \| `doctrine` \| `sqlalchemy` \| `efcore` \| `gorm` \| `hibernate` \| `activerecord` |
 | `task_tracker` | `clickup` \| `jira` \| `github` \| `linear` \| `none` |
 | `base_branch` | `dev` \| `main` (branch PRs target) |
 | `branch_prefix` | e.g. `CU`, `PROJ`, `#`, or empty |
 
-If `.claude/dev-workflow.json` is absent, `detect-stack.sh` falls back to auto-detection from project files (`package.json`, `go.mod`, `*.sln`, etc.).
+If `.claude/dev-workflow.json` is absent, `detect-stack.sh` falls back to auto-detection from project files (`package.json`, `composer.json`, `go.mod`, `*.sln`, etc.). For monoliths, it auto-detects a secondary frontend stack when a non-node backend has a `package.json` or JS asset directories.
 
 ---
 
@@ -176,7 +218,7 @@ Skills are loaded by agents as needed. They are not user-invocable (except `init
 | `write-edit-files` | qa, implementation, bugfix, review-security, docs | Stack-aware file writing conventions |
 | `run-terminal` | qa, implementation, bugfix, review-security | Stack-aware build/test/install commands |
 | `database-conventions` | implementation, bugfix, review-security | ORM-specific query safety rules |
-| `api-architecture-contracts` | architect, review-security | API contract rules (inward for frontend, outward for backend) |
+| `api-architecture-contracts` | architect, review-security | API contract rules (inward for frontend, outward for backend, cross-stack for monolith) |
 | `clickup` | orchestrator (when `task_tracker: clickup`) | ClickUp task/doc management via API |
 
 ---
@@ -185,10 +227,13 @@ Skills are loaded by agents as needed. They are not user-invocable (except `init
 
 When enabled, `post-edit.sh` runs a lightweight check after every file write or edit. It is silent on success and prints errors on failure.
 
+For monolith projects, it dispatches by file extension so each stack's files get the right check.
+
 | Stack | Check |
 |-------|-------|
 | Node + TypeScript | `tsc --noEmit` |
 | Node + JS | ESLint (if configured) |
+| PHP | `php -l` (syntax) → PHPStan (if available) |
 | .NET | `dotnet build --no-restore` |
 | Python | `ruff check` → `flake8` → `py_compile` |
 | Go | `go build ./...` |
@@ -224,13 +269,13 @@ When enabled, `post-edit.sh` runs a lightweight check after every file write or 
       api/                   # API client modules
       lib/                   # Formatting and parsing helpers
   scripts/
-    detect-stack.sh          # Stack detection and config loading
+    detect-stack.sh          # Stack detection and config loading (multi-stack aware)
     codebase-conventions.sh  # Generates read-codebase skill content
     write-conventions.sh     # Generates write-edit-files skill content
     terminal-conventions.sh  # Generates run-terminal skill content
     sql-conventions.sh       # Generates database-conventions skill content
     api-architecture-contracts.sh    # Generates api-architecture-contracts skill content
-    post-edit.sh             # Post-edit build/lint hook
+    post-edit.sh             # Post-edit build/lint hook (file-extension dispatch for monoliths)
   hooks/
     hooks.json               # Hook definitions
   .claude-plugin/
@@ -241,9 +286,10 @@ When enabled, `post-edit.sh` runs a lightweight check after every file write or 
 
 ## Adding a new stack
 
-1. Add detection logic to `scripts/detect-stack.sh` (new `elif` branch in the auto-detect section).
+1. Add detection logic to `scripts/detect-stack.sh` (new `elif` branch in the auto-detect section, and a case in `_detect_orm`).
 2. Add a `case` branch to each of the five convention scripts (`terminal-conventions.sh`, `codebase-conventions.sh`, `write-conventions.sh`, `sql-conventions.sh`, and optionally `api-architecture-contracts.sh`).
-3. Add the new stack option to `skills/init/SKILL.md` so the wizard presents it.
+3. Add a `case` branch to `post-edit.sh` (both the file-extension dispatch and the single-stack section).
+4. Add the new stack option to `skills/init/SKILL.md` so the wizard presents it.
 
 ---
 
