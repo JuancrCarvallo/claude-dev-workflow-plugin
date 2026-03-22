@@ -59,20 +59,7 @@ Add the following to your project's `.claude/settings.json`. If the file does no
 
 Skip this step if you do not want the post-edit build check. You can enable it later via `/dev-workflow:init`.
 
-### 3. Register the agents and skills
-
-Add the plugin paths to `.claude/settings.json` so Claude Code picks up the agents and skills:
-
-```json
-{
-  "agents": ".claude/dev-workflow/agents",
-  "skills": ".claude/dev-workflow/skills"
-}
-```
-
-If your settings file already has `agents` or `skills` keys, merge the paths rather than replacing them.
-
-### 4. Run the init skill
+### 3. Run the init skill
 
 In a Claude Code session, run:
 
@@ -84,7 +71,7 @@ This walks you through a short configuration wizard and writes `.claude/dev-work
 
 Note: if context skills are not available, just prompt `run dev-workflow init skill` and the agent will acknowledge it.
 
-### 5. Add dev-workflow hook
+### 4. Add dev-workflow hook
 
 Create a hook that injects dev-workflow context in settings.json 
 ```json
@@ -100,7 +87,7 @@ Create a hook that injects dev-workflow context in settings.json
     ]
 ```
 
-### 6. [OPTIONAL] Add symlinks to ensure native Claude functions
+### 5. [OPTIONAL] Add symlinks to ensure native Claude functions
 
 Claude preloads `./claude/agents` and `.claude/skills` by default. To use native UI commands like `/agents` or `/skills` and avoid injecting the plugin by a hook you can symlink all the content in `.claude/dev-workflow` to standard location. 
 
