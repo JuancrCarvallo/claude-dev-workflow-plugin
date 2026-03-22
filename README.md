@@ -82,6 +82,28 @@ In a Claude Code session, run:
 
 This walks you through a short configuration wizard and writes `.claude/dev-workflow.json` with your stack settings. Commit this file so the whole team shares the same config.
 
+Note: if context skills are not available, just prompt `run dev-workflow init skill` and the agent will acknowledge it.
+
+### 5. Add dev-workflow hook
+
+Create a hook that injects dev-workflow context in settings.json 
+```json
+"UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'Follow the dev-workflow orchestrator: read .claude/dev-workflow/agents/orchestrator.md and act as Orchestrator for all development tasks.'"
+          }
+        ]
+      }
+    ]
+```
+
+### 6. [OPTIONAL] Add symlinks to ensure native Claude functions
+
+Claude preloads `./claude/agents` and `.claude/skills` by default. To use native UI commands like `/agents` or `/skills` and avoid injecting the plugin by a hook you can symlink all the content in `.claude/dev-workflow` to standard location. 
+
 ---
 
 ## Configuration file
