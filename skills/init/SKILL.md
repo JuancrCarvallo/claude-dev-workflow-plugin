@@ -343,7 +343,15 @@ Loaded by agents that use the `database-conventions` skill. Contains the actual 
 
 ---
 
-6. Confirm the written config to the user and tell them:
+6. **Install skills into Claude Code format.** Run:
+
+```bash
+bash .claude/dev-workflow/scripts/install-skills.sh
+```
+
+This copies each plugin skill into `.claude/skills/<name>/SKILL.md` (the directory format Claude Code expects). The `!`command`` injections are preserved — Claude Code resolves them natively at runtime.
+
+7. Confirm the written config to the user and tell them:
 - All skills (run-terminal, database-conventions, etc.) will now adapt to this stack automatically
 - If the scan ran, agents load the context files automatically via their skills — no extra steps needed:
   - `read-codebase` ← `.claude/dev-workflow-context/read-codebase.md` (layer map, auth, response contracts)
@@ -351,5 +359,5 @@ Loaded by agents that use the `database-conventions` skill. Contains the actual 
   - `database-conventions` ← `.claude/dev-workflow-context/database-conventions.md` (schema, migrations)
 - For monoliths: conventions for **both stacks** are emitted automatically — the post-edit hook dispatches by file extension
 - Re-run `/dev-workflow:init` at any time to reconfigure or refresh the context
-- Commit `.claude/dev-workflow.json` and `.claude/dev-workflow-context/` so the whole team shares the same context
+- Commit `.claude/dev-workflow.json`, `.claude/dev-workflow-context/`, and `.claude/skills/` so the whole team shares the same context
 - If hooks were enabled, the post-edit check runs silently on success and prints errors on failure

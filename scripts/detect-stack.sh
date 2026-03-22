@@ -1,7 +1,7 @@
 #!/bin/bash
 # Reads .claude/dev-workflow.json if present.
 # Falls back to auto-detection from project files.
-# Outputs a shell-sourceable set of variables.
+# No external dependencies — pure bash (no jq required).
 #
 # Multi-stack support (monoliths):
 #   When the config contains a "stacks" array, each entry is exported as
@@ -13,6 +13,36 @@
 #   flat STACK, STACK_DETAIL, PACKAGE_MANAGER, TEST_FRAMEWORK, ORM variables.
 
 CONFIG=".claude/dev-workflow.json"
+
+# ─── JSON helpers (pure bash — no jq) ────────────────────────────────────────
+# These work on well-formatted JSON written by /dev-workflow:init.
+
+# Extract a top-level string value.  Usage: _json_str "key" "file"
+_json_str() {
+  sed -n 's/.*"'"$1"'"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$2" | head -1
+}
+
+# Extract a top-level raw value (true/false/null/number).
+_json_raw() {
+  sed -n 's/.*"'"$1"'"[[:space:]]*:[[:space:]]*\([a-z0-9.]*\).*/\1/p' "$2" | head -1
+}
+
+# Extract a string field from a single-line JSON snippet piped via stdin.
+_field() {
+  sed -n 's/.*"'"$1"'"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1
+}
+
+# Extract each stack object from the "stacks" array as one line per object.
+# Collapses multi-line JSON objects onto single lines for easy parsing.
+_extract_stacks() {
+  awk '
+    /"stacks"[[:space:]]*:/ { in_arr=1; next }
+    in_arr && /\{/  { in_obj=1; obj=""; next }
+    in_arr && in_obj { gsub(/^[[:space:]]+/, ""); obj = obj " " $0 }
+    in_arr && /\}/  { if (in_obj) { print obj; in_obj=0 } }
+    in_arr && /\]/  { exit }
+  ' "$1"
+}
 
 # ─── Helper: export one stack entry ──────────────────────────────────────────
 _export_stack() {
@@ -53,20 +83,21 @@ _detect_orm() {
 
 # ─── Read from config ────────────────────────────────────────────────────────
 if [ -f "$CONFIG" ]; then
-  STACKS_LEN=$(jq -r '.stacks // [] | length' "$CONFIG")
 
-  if [ "$STACKS_LEN" -gt 0 ] 2>/dev/null; then
+  if grep -q '"stacks"' "$CONFIG"; then
     # ── Multi-stack (monolith) config ──
-    STACK_COUNT="$STACKS_LEN"
-    for i in $(seq 0 $((STACK_COUNT - 1))); do
-      _export_stack "$i" \
-        "$(jq -r ".stacks[$i].name // empty" "$CONFIG")" \
-        "$(jq -r ".stacks[$i].role // empty" "$CONFIG")" \
-        "$(jq -r ".stacks[$i].stack_detail // empty" "$CONFIG")" \
-        "$(jq -r ".stacks[$i].package_manager // empty" "$CONFIG")" \
-        "$(jq -r ".stacks[$i].test_framework // empty" "$CONFIG")" \
-        "$(jq -r ".stacks[$i].orm // empty" "$CONFIG")"
-    done
+    STACK_COUNT=0
+    while IFS= read -r line; do
+      [ -z "$line" ] && continue
+      _name=$(echo "$line" | _field "name")
+      _role=$(echo "$line" | _field "role")
+      _detail=$(echo "$line" | _field "stack_detail")
+      _pm=$(echo "$line" | _field "package_manager")
+      _tf=$(echo "$line" | _field "test_framework")
+      _orm=$(echo "$line" | _field "orm")
+      _export_stack "$STACK_COUNT" "$_name" "$_role" "$_detail" "$_pm" "$_tf" "$_orm"
+      STACK_COUNT=$((STACK_COUNT + 1))
+    done < <(_extract_stacks "$CONFIG")
 
     # Flat aliases point to the first stack for backward compat
     STACK="$STACK_0_NAME"
@@ -78,23 +109,24 @@ if [ -f "$CONFIG" ]; then
   else
     # ── Single-stack config (original format) ──
     STACK_COUNT=1
-    STACK=$(jq -r '.stack // empty' "$CONFIG")
-    TYPE=$(jq -r '.type // empty' "$CONFIG")
-    STACK_DETAIL=$(jq -r '.stack_detail // empty' "$CONFIG")
-    PACKAGE_MANAGER=$(jq -r '.package_manager // empty' "$CONFIG")
-    TEST_FRAMEWORK=$(jq -r '.test_framework // empty' "$CONFIG")
-    SOLUTION_FILE=$(jq -r '.solution_file // empty' "$CONFIG")
-    ORM=$(jq -r '.orm // empty' "$CONFIG")
+    STACK=$(_json_str "stack" "$CONFIG")
+    TYPE=$(_json_str "type" "$CONFIG")
+    STACK_DETAIL=$(_json_str "stack_detail" "$CONFIG")
+    PACKAGE_MANAGER=$(_json_str "package_manager" "$CONFIG")
+    TEST_FRAMEWORK=$(_json_str "test_framework" "$CONFIG")
+    SOLUTION_FILE=$(_json_str "solution_file" "$CONFIG")
+    ORM=$(_json_str "orm" "$CONFIG")
 
     _export_stack 0 "$STACK" "$TYPE" "$STACK_DETAIL" "$PACKAGE_MANAGER" "$TEST_FRAMEWORK" "$ORM"
   fi
 
-  DATABASE=$(jq -r '.database // empty' "$CONFIG")
-  DB_ENGINE=$(jq -r '.db_engine // empty' "$CONFIG")
-  TASK_TRACKER=$(jq -r '.task_tracker // empty' "$CONFIG")
-  BASE_BRANCH=$(jq -r '.base_branch // "dev"' "$CONFIG")
-  BRANCH_PREFIX=$(jq -r '.branch_prefix // ""' "$CONFIG")
-  TYPE=$(jq -r '.type // empty' "$CONFIG")
+  DATABASE=$(_json_raw "database" "$CONFIG")
+  DB_ENGINE=$(_json_str "db_engine" "$CONFIG")
+  TASK_TRACKER=$(_json_str "task_tracker" "$CONFIG")
+  BASE_BRANCH=$(_json_str "base_branch" "$CONFIG")
+  [ -z "$BASE_BRANCH" ] && BASE_BRANCH="dev"
+  BRANCH_PREFIX=$(_json_str "branch_prefix" "$CONFIG")
+  TYPE=$(_json_str "type" "$CONFIG")
 
 else
   # ─── Auto-detect from project files ──────────────────────────────────────
@@ -119,7 +151,8 @@ else
     _name="node"
     _pm=$([ -f "yarn.lock" ] && echo "yarn" || ([ -f "pnpm-lock.yaml" ] && echo "pnpm" || echo "npm"))
     _detail=$([ -f "tsconfig.json" ] && echo "typescript" || echo "javascript")
-    _tf=$(jq -r '.scripts.test // empty' package.json 2>/dev/null | grep -o 'jest\|vitest\|mocha' | head -1)
+    # Try to detect test framework from scripts without jq
+    _tf=$(grep -o '"test"[[:space:]]*:[[:space:]]*"[^"]*"' package.json 2>/dev/null | grep -o 'jest\|vitest\|mocha' | head -1)
     [ -z "$_tf" ] && _tf="jest"
     _orm=$(_detect_orm node)
     _export_stack "$STACK_COUNT" "$_name" "backend" "$_detail" "$_pm" "$_tf" "$_orm"
@@ -163,17 +196,14 @@ else
   fi
 
   # --- Frontend detection (secondary stack for monoliths) ---
-  # If backend is not node and there are JS/CSS assets, add a frontend stack
   if [ "$STACK_COUNT" -gt 0 ] && [ "$STACK_0_NAME" != "node" ]; then
     if [ -f "package.json" ]; then
-      # A package.json alongside a non-node backend = monolith with JS frontend
       _pm=$([ -f "yarn.lock" ] && echo "yarn" || ([ -f "pnpm-lock.yaml" ] && echo "pnpm" || echo "npm"))
       _detail=$([ -f "tsconfig.json" ] && echo "typescript" || echo "javascript")
-      _tf=$(jq -r '.scripts.test // empty' package.json 2>/dev/null | grep -o 'jest\|vitest\|mocha' | head -1)
+      _tf=$(grep -o '"test"[[:space:]]*:[[:space:]]*"[^"]*"' package.json 2>/dev/null | grep -o 'jest\|vitest\|mocha' | head -1)
       _export_stack "$STACK_COUNT" "node" "frontend" "$_detail" "$_pm" "$_tf" ""
       STACK_COUNT=$((STACK_COUNT + 1))
     elif ls public/js/*.js resources/js/*.js assets/js/*.js static/js/*.js 2>/dev/null | head -1 | grep -q '.js'; then
-      # Vanilla JS / jQuery assets without package.json
       _export_stack "$STACK_COUNT" "js-assets" "frontend" "javascript" "" "" ""
       STACK_COUNT=$((STACK_COUNT + 1))
     fi
