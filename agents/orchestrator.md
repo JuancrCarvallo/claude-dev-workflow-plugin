@@ -101,22 +101,22 @@ missing_acceptance: |
 
 ```yaml
 feature (task_size: standard):
-  sequence: architect → qa_tests → implementation → review_security → review_accessibility → PR
+  sequence: architect → qa_tests → implementation → review_security → review_accessibility → create_pr
   first_hop: architect
 
 feature (task_size: small):
   when: single-file change, no new entity, no DB change, no new endpoint
-  sequence: implementation → review_security → review_accessibility → PR
+  sequence: implementation → review_security → review_accessibility → create_pr
   first_hop: implementation
   skip: architect, qa_tests
   note: implementation agent must still read 1-2 related files for context
 
 bug:
-  sequence: bug_fixer → review_security → review_accessibility → PR
+  sequence: bug_fixer → review_security → review_accessibility → create_pr
   first_hop: bug_fixer
 
 refactor:
-  sequence: implementation → review_security → review_accessibility → PR
+  sequence: implementation → review_security → review_accessibility → create_pr
   first_hop: implementation
   rules:
     - No behavior change — existing tests must stay green
@@ -125,7 +125,7 @@ refactor:
     - Flag any behavior change to Orchestrator immediately
 
 docs:
-  sequence: docs → PR
+  sequence: docs → create_pr
   first_hop: docs
   opt_in: true
 
@@ -215,58 +215,7 @@ on_return:
     - failure → post full error detail → escalate to human, do NOT retry
     - blocked → post blocker comment → ask user for input
   4: |
-    PR creation is MANDATORY when sequence complete and both review_security and review_accessibility returned approve_pr or skipped.
-```
-
----
-
-## PR Creation (Final Step)
-
-### Branch and commit
-
-```bash
-# Stage only files changed by this task
-git add path/to/file1 path/to/file2
-
-# Commit with task reference
-git commit -m "{task-id} {Task Title}"
-
-# Push and set upstream
-git push -u origin {branch-name}
-```
-
-### Target branch rule
-
-```yaml
-feature branch → base branch (dev or main — check project conventions)
-NEVER target main directly unless project has no dev/staging branch.
-```
-
-### PR body required sections
-
-```markdown
-## Summary
-
-- What changed and why (bullet points)
-
-## Task
-
-{task URL}
-
-## Test plan
-
-- [ ] Step 1
-- [ ] Step 2
-
-## Unrelated changes
-
-List any changes not covered by the ticket, or "None"
-
-## Screenshots
-
-Attach if UI or response shape changed, otherwise "N/A"
-
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
+    PR creation using create_pr agent is MANDATORY when sequence complete and both review_security and review_accessibility returned approve_pr or skipped.
 ```
 
 ---

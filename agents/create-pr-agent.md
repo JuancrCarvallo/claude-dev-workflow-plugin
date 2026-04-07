@@ -9,7 +9,7 @@ skills:
 
 # Create PR Agent
 
-> Generates a complete Pull Request description using `.github/pull_request_template.md` and creates the PR on GitHub.
+> Generates a complete Pull Request description using template section rules and creates the PR on GitHub.
 
 ---
 
