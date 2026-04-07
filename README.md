@@ -35,6 +35,8 @@ Or add it as a submodule:
 git submodule add <repo-url> .claude/dev-workflow
 ```
 
+Or the easiest way: downloading .zip release and add it mannualy in the repo
+
 ### 2. Register the hooks
 
 Add the following to your project's `.claude/settings.json`. If the file does not exist, create it.
