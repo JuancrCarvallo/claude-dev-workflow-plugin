@@ -99,7 +99,7 @@ can:
 
 cannot:
   - Write implementation code.
-  - Plan technical subtasks (that belongs to plan-expert-agent).
+  - Plan technical subtasks (that belongs to architect-agent).
   - Approve its own specifications.
 ```
 

@@ -2,7 +2,7 @@
 name: create-pr
 description: Creates a GitHub pull request with a fully auto-populated standardized template. Infers the base branch, derives the description from the diff and commits, detects shared code impact, tags stakeholders from CODEOWNERS, and builds a concrete test plan from the changes. Designed to run without human input when called by an agent, or with a confirmation step when invoked directly.
 argument-hint: [--base <branch>] [--ticket-id <id>] [--auto]
-allowed-tools: Bash AskUserQuestion mcp__github__create_pull_request mcp__github__list_branches
+allowed-tools: Bash AskUserQuestion mcp__github__create_pull_request mcp__github__list_branches mcp__clickup__clickup_get_task
 effort: low
 ---
 
@@ -190,8 +190,9 @@ If no breaking changes: Do not include the `### Breaking Changes` section in the
 
 2. Also run:
    ```bash
-   git log <BASE_BRANCH>...HEAD --invert-grep -E --format="%ae" -- <changed files> | sort | uniq
+   git log <BASE_BRANCH> --format="%ae" -- <changed files> | sort | uniq
    ```
+   This inspects the history of the changed files on the base branch to find recent contributors.
    Map contributor emails to GitHub handles where possible (use the handle from CODEOWNERS if the same person appears there).
 
 3. Combine both sources into a de-duplicated list of `@handles`.
