@@ -35,7 +35,7 @@ Orchestrator activates when:
 ```yaml
 1_receive: User message OR agent return
 2_gather_context: Fetch task details, ask clarifying questions if needed
-3_classify_intent: feature | bug | docs | question | review | unknown
+3_classify_intent: new_feature | feature | bug | quick_task | refactor | docs | question | review | unknown
 4_create_branch: |
   REQUIRED before routing to any agent (skip only for intent: question).
   a) Check current branch — if already on a task branch, skip.
@@ -100,6 +100,13 @@ missing_acceptance: |
 ## Routing Table
 
 ```yaml
+new_feature:
+  sequence: feature_discovery → plan_expert → architect → qa_tests → implementation → review_security → review_accessibility → create_pr
+  first_hop: feature_discovery
+  note: |
+    feature_discovery returns { FEATURE_SPEC, TICKET_ID, TICKET_URL }.
+    Pass FEATURE_SPEC + TICKET_ID to plan_expert, then continue standard feature sequence.
+
 feature (task_size: standard):
   sequence: architect → qa_tests → implementation → review_security → review_accessibility → create_pr
   first_hop: architect
@@ -114,6 +121,11 @@ feature (task_size: small):
 bug:
   sequence: bug_fixer → review_security → review_accessibility → create_pr
   first_hop: bug_fixer
+
+quick_task:
+  sequence: plan_expert → implementation → review_security → review_accessibility → create_pr
+  first_hop: plan_expert
+  note: plan_expert decomposes the ticket into ordered subtasks before implementation begins
 
 refactor:
   sequence: implementation → review_security → review_accessibility → create_pr
@@ -248,7 +260,7 @@ unknown_intent:
 can:
   - Ask clarifying questions
   - Create/update tasks
-  - Route to any agent
+  - Route to any agent (including feature_discovery and plan_expert)
   - Create PRs
   - Answer simple questions directly
 

@@ -1,211 +1,319 @@
 ---
 name: create-pr
-description: Generates a complete PR description using the repo template and (optionally) creates the PR on GitHub.
-model: claude-sonnet-4-6
-skills:
-  - read-codebase
-  - run-terminal
+description: Creates a GitHub pull request with a fully auto-populated standardized template. Infers the base branch, derives the description from the diff and commits, detects shared code impact, tags stakeholders from CODEOWNERS, and builds a concrete test plan from the changes. Designed to run without human input when called by an agent, or with a confirmation step when invoked directly.
+argument-hint: [--base <branch>] [--ticket-id <id>] [--auto]
+allowed-tools: Bash AskUserQuestion mcp__github__create_pull_request mcp__github__list_branches mcp__clickup__clickup_get_task
+effort: low
 ---
 
-# Create PR Agent
+# create-pr
 
-> Generates a complete Pull Request description using template section rules and creates the PR on GitHub.
+**Role:** Senior engineer opening a pull request.  
+**Goal:** Auto-generate a complete, reviewer-ready PR from git context alone. Every section is derived from the diff, commits, branch name, and project files — no manual writing required. When `--auto` is passed (or when called by another skill/agent), skip all confirmation steps and create the PR immediately.
+**Cannot:** Commit changes, push changes, or modify the codebase in any way. This agent is read-only.
 
 ---
 
-## Role
+## Step 1 — Parse arguments
 
-```yaml
-purpose: Gather diff context, fill every section of the PR template, and create the PR
-authority: Can read codebase, run git/gh CLI commands, write .github/.pr_body_temp.md
-cannot: Approve or merge PRs, modify source code, invoke other agents
+Parse `$ARGUMENTS` for:
+- `--base <branch>` — target branch for the PR (skip inference if provided)
+- `--ticket-id <id>` — ClickUp or issue ID to reference (optional)
+- `--auto` — skip all confirmation steps and create the PR without asking
+
+Capture any provided values. Set `AUTO_MODE = true` if `--auto` is present.
+
+---
+
+## Step 2 — Gather git context
+
+Run all commands via Bash. Capture every output — it feeds every section of the template.
+
+```bash
+# Status 
+git status
+
+# Current branch
+git branch --show-current
+
+# Remote URL (to extract OWNER and REPO)
+git remote get-url origin
+
+# Current git user email (to exclude from FYI tagging)
+git config user.email
+
+# All remote branches (for base branch inference)
+git branch -r --format='%(refname:short)' | sed 's/origin\///'
+
+# Last 20 commits on this branch (used for description and module inference)
+git log HEAD --oneline -20
+
+# All changed files vs each candidate base branch (resolved once base is confirmed)
+# Run after base is resolved:
+git diff <BASE_BRANCH>...HEAD --name-only
+git diff <BASE_BRANCH>...HEAD --stat
+git diff <BASE_BRANCH>...HEAD
+```
+
+Extract `OWNER` and `REPO` from the remote URL:
+- SSH: `git@github.com:owner/repo.git`
+- HTTPS: `https://github.com/owner/repo.git`
+
+If the working tree has uncommitted changes, exit the pr creation process and request the user to create a commit first.
+
+---
+
+## Step 3 — Infer the base branch
+
+If `--base` was provided, use it as `BASE_BRANCH` without any confirmation or inference and skip to Step 4. This is always correct when called by `implement-task` — do not second-guess it.
+
+Otherwise, infer from the remote branches list using this priority order:
+
+1. `main`
+2. `master`
+3. `develop`
+4. `staging`
+5. First `release/*` branch found
+6. If none of the above exist, use the most recently committed remote branch
+
+If `AUTO_MODE` is false and the inferred branch is not `main` or `master`, confirm with the user:
+> "Inferred base branch: `<branch>`. Is this correct?"
+In `AUTO_MODE`, proceed with the inferred branch silently.
+
+If the current branch equals `BASE_BRANCH`, stop:
+> "The current branch is the same as the base branch. Switch to a feature branch first."
+
+---
+
+## Step 4 — Infer PR title
+
+Derive the PR title from the branch name:
+1. Strip the type prefix: `feat/`, `fix/`, `chore/`, `refactor/`, `docs/`, `hotfix/`
+2. Strip any ticket/sprint/module prefix (e.g. `CU-abc123-`, `M3-S12-`)
+3. Replace hyphens and underscores with spaces
+4. Title-case the result
+5. Prepend the type label in brackets: `[Feature]`, `[Fix]`, `[Refactor]`, `[Docs]`, `[Chore]`, `[Hotfix]`
+6. If a ticket ID is available (from `--ticket-id` or extracted from the branch name), append it: `(CU-abc123)`
+
+Example: `feat/CU-abc123-user-auth-flow` → `[Feature] User auth flow (CU-abc123)`
+
+---
+
+## Step 5 — Populate the PR template
+
+The canonical PR body structure is defined in `templates/pull_request_template.md` at the project root of the **ai-toolbox** repo (the repo where this skill lives). Read that file and use it as the exact skeleton — do not invent or remove sections. Populate every placeholder by analyzing the git context from Step 2. Instructions inside each section below describe how to derive the content — follow them precisely. The rendered output must not contain the instruction text or placeholder markers.
+
+---
+
+### Section: Description
+
+Using the commit messages and `git diff` output:
+
+- Write 2–4 bullet points summarising the "Why" (motivation / problem solved) and "What" (what was changed at a high level)
+- Every bullet must start with exactly one of these semantic keywords: `add`, `update`, `fix`, `refactor`, `delete`
+- Do not paste raw commit messages — rewrite them as coherent intent statements
+- Be specific: reference function names, component names, or API routes where relevant
+
+---
+
+### Section: Type of Change
+
+From the PR title type label (inferred in Step 4) or the branch prefix, tick exactly one checkbox:
+
+| Branch prefix / label | Checkbox to tick |
+|---|---|
+| `feat/` / `[Feature]` | `- [x] Feature` |
+| `fix/` / `[Fix]` | `- [x] Bug Fix` |
+| `refactor/` / `[Refactor]` | `- [x] Refactor` |
+| `docs/` / `[Docs]` | `- [x] Docs` |
+| `chore/` / `[Chore]` | `- [x] Chore` |
+| `hotfix/` / `[Hotfix]` | `- [x] Hotfix` |
+
+Leave all others unchecked.
+
+---
+
+### Section: Related Ticket
+
+- If `--ticket-id` was provided, format it as a ClickUp URL: `https://app.clickup.com/t/<id>`
+- If a ticket ID was extracted from the branch name (e.g. `CU-abc123`), use the same format
+- If no ticket is available, write: `N/A`
+
+---
+
+### Section: Module
+
+Parse the branch name and the last 20 commit messages for:
+
+- **Migration Number / Section Name** — look in the branch name or commits. Extract as `Module {name}`. If not found, write `<!-- TBD -->`.
+- **Sprint** — look for it into clickup workspace using the ticket id. If not found, write `<!-- TBD -->`.
+
+Never invent values. Placeholders are correct when data is absent.
+
+---
+
+### Section: Shared Code Impact
+
+Inspect the list of changed files (`git diff --name-only`) for any files inside directories that suggest shared or cross-cutting code:
+
+- Common directory names: `shared/`, `core/`, `common/`, `lib/`, `utils/`, `helpers/`, `hooks/`, `composables/`, `services/`, `types/`, `constants/`
+
+If any matches are found:
+- Answer: **Yes**
+- List each affected file path
+- Add: `Team notified: No` (the author must verify before merge)
+
+If no matches: Do not include the `### Shared Code Impact` section in the rendered PR body.
+
+---
+
+### Section: Breaking Changes
+
+Analyze the git diff and commit messages for indications of breaking changes, such as:
+- Modified or removed API route parameters/responses
+- Changes to shared library function signatures/interfaces
+- Database schema changes that remove or alter columns
+- Commit messages containing `BREAKING CHANGE:` or `!` in the type prefix (e.g. `feat!:`)
+
+If breaking changes are detected:
+- Answer: **Yes**
+- Describe what breaks and the required migration path for other developers
+
+If no breaking changes: Do not include the `### Breaking Changes` section in the rendered PR body.
+
+---
+
+### Section: FYI
+
+1. Check if a `CODEOWNERS` file exists at the project root or `.github/CODEOWNERS`.  
+   If it exists, read it and extract GitHub handles (`@username`) mapped to the changed files.
+
+2. Also run:
+   ```bash
+   git log <BASE_BRANCH> --format="%ae" -- <changed files> | sort | uniq
+   ```
+   This inspects the history of the changed files on the base branch to find recent contributors.
+   Map contributor emails to GitHub handles where possible (use the handle from CODEOWNERS if the same person appears there).
+
+3. Combine both sources into a de-duplicated list of `@handles`.
+
+4. **Mandatory:** remove the current PR author's handle from the list (identified by `git config user.email` from Step 2).
+
+5. If the list is empty after deduplication, write: `No additional stakeholders identified.`
+
+---
+
+### Section: Screenshots
+
+Inspect the changed file paths for UI indicators:
+- Directories: `pages/`, `views/`, `routes/`, `screens/`, `app/`, `src/app/`
+- File extensions or names containing: `.vue`, `.svelte`, `Page.`, `View.`, `Screen.`, `Layout.`
+- Any component file touched inside a route-level directory
+
+**If UI changes are detected:**
+- List each modified route or page
+
+**If no UI changes:** write: `No UI changes in this PR.`
+
+---
+
+### Section: Test Plan
+
+Derive a concrete, ordered checkbox list a reviewer can follow to verify the changes end-to-end.
+
+Rules:
+- Every step must come from the actual diff — no generic steps like "verify the app works"
+- Start from the entry point a real user or caller would use (navigate to a route, call an endpoint, trigger an action)
+- Cover the happy path first, then at least one edge or error case if changes touch validation, error handling, or conditional logic
+- Include any required setup (env vars, feature flags, seed data, running migrations)
+- One action per checkbox — short and imperative
+- If the change is backend-only: describe the API call (method, endpoint, payload, expected response)
+- If the change is UI-only: describe the user interaction and the expected visual or functional outcome
+- If new tests were added: include a step to run them with the specific command (e.g. `npm test -- --testPathPattern=<file>`)
+
+Format:
+```
+- [ ] <imperative step>
+- [ ] <imperative step>
 ```
 
 ---
 
-## Activation
+### Section: Release Readiness
 
-Invoked directly by the user when they are ready to open a Pull Request.
-
----
-
-## Verification Gates
-
-### Gate 1: Context Density
-
-```yaml
-positive_signal:
-  - Description provides a clear "Why" (value proposition) and "What" (technical changes)
-  - ClickUp task ID present (format CU-XXXXXXXX, extracted from branch name)
-negative_noise:
-  - Description just echoes commit messages without detailing user impact
-action: Synthesize a high-level summary — strip the raw commit log
-```
-
-### Gate 2: Evidence & Quality Formatting
-
-```yaml
-positive_verified:
-  - UI changes have screenshots in the Screenshots section
-  - All Yes/No fields are filled — never blank
-negative_risk:
-  - Screenshots missing for UI/template/style changes
-  - Yes/No fields left empty
-action: |
-  Capture screenshots for all modified UI routes if the diff contains
-  HTML/CSS/template changes. Populate every Yes/No field based on diff data,
-  or explicitly state "N/A".
-```
+- `Ready for release:` Yes — if all test plan steps are expected to pass based on the implementation
+- `Needs additional work:` No — unless there are known gaps, open questions, or incomplete items identified during implementation
 
 ---
 
-## Workflow
+## Step 6 — Render and confirm
 
-```yaml
-1_gather_context:
-  base_branch: |
-    Determine correct base branch (main, develop, or release branch).
-    Run: rtk git log --oneline | head -20
-    Do NOT assume main automatically.
-  diff_analysis:
-    - rtk git log {base_branch}..HEAD --oneline
-    - rtk git diff {base_branch}..HEAD --stat
-  labels:
-    - rtk gh label list --json name
-    - Pick 1-3 labels matching the changes (bug, enhancement, refactor, etc.)
-  reviewers:
-    - Check .github/CODEOWNERS for affected paths
-    - rtk git log --format="%ae" {base_branch}..HEAD | sort | uniq
-    - MANDATORY: exclude the PR author from FYI section
-  task_id: Extract CU-XXXXXXXX from branch name
+Assemble the full PR body using this exact structure:
 
-2_draft:
-  template_source: .github/pull_request_template.md
-  rule: Use template as MANDATORY schema — do not omit any section
+```markdown
+## Description 📝
+<populated description bullets>
 
-3_export:
-  - Write fully drafted Markdown to .github/.pr_body_temp.md
+### Type of Change
+<checkbox list with exactly one item checked based on branch type>
 
-4_create:
-  option_a_automated: |
-    rtk gh pr create --draft \
-      --title "[task-id] [Title]" \
-      --body-file ".github/.pr_body_temp.md" \
-      --base "{base_branch}" \
-      --assignee "@me" \
-      --label "{labels}" \
-      --reviewer "{reviewers}"
-    rm .github/.pr_body_temp.md
-  option_b_copy_paste: Output full Markdown for user to copy
-```
-
----
-
-## Template Section Rules
-
-### Description 📝
-
-```yaml
-- Write a high-level "Why" and "What"
-- List changes using ONLY these semantics: add | update | fix | refactor | delete
-- Do not paste raw commit messages
-```
+### Related Ticket
+<ticket URL or "N/A">
 
 ### Module
-
-```yaml
-- Infer Migration Number/Section Name (M{N}) from branch name or commit messages
-- Infer Sprint number from ClickUp task or branch name
-- If not determinable, leave placeholder — do not invent values
-```
+- Migration: <M{N} or TBD>
+- Sprint: <S{N} or TBD>
 
 ### Shared Code Impact
+<Include only if Yes: file list and Team notified>
 
-```yaml
-- Inspect diff for changes in shared/, core/, common/ or similar modules
-- Answer Yes/No and list affected files if Yes
-- "Team notified" defaults to No — author must verify before merge
-```
+### Breaking Changes
+<Include only if Yes: describe what breaks and the migration path>
 
 ### FYI 🙋
-
-```yaml
-- Tag relevant stakeholders from CODEOWNERS or recent contributors to affected files
-- MANDATORY: exclude the PR author
-```
+<@handles or "No additional stakeholders identified.">
 
 ### Screenshots 📸
-
-```yaml
-ui_changes_present:
-  - Capture full-page screenshots for ALL modified routes
-  - Convert local paths to remote GitHub URLs:
-    https://github.com/[OWNER]/[REPO]/blob/[BRANCH]/.github/evidence/[FILENAME].png?raw=true
-no_ui_changes: State "No UI changes in this PR."
-```
+<screenshot entries or "No UI changes in this PR.">
 
 ### Test Plan 🧪
-
-```yaml
-purpose: Provide a concrete, ordered checklist a reviewer can follow to verify the changes work end-to-end
-format: Markdown checkbox list (- [ ] Step)
-rules:
-  - Derive steps from the diff — do not write generic or placeholder steps
-  - Start from the entry point a user would take (e.g. navigate to a route, trigger an action)
-  - Cover the happy path first, then at least one edge/error case if applicable
-  - Include setup steps if env vars, seed data, or feature flags are needed
-  - One action per step — keep each step short and imperative
-  - If the change is backend-only, describe the API call (method, endpoint, payload, expected response)
-  - If the change is UI-only, describe the user interaction and expected visual outcome
-  - If tests were added, include a step to run them: `npm test -- --testPathPattern=<file>`
-
-example_ui: |
-  - [ ] Navigate to /games/:id/play-by-play
-  - [ ] Verify innings filter renders with all available innings
-  - [ ] Select inning 3 — confirm at-bat list updates to show only inning 3 plays
-  - [ ] Select "All" — confirm full play list is restored
-  - [ ] Resize to mobile (375px) — confirm filter does not overflow
-
-example_api: |
-  - [ ] POST /api/games with valid payload — expect 201 and game ID in response
-  - [ ] POST /api/games with missing `sport` field — expect 422 with validation error
-  - [ ] GET /api/games/:id — confirm returned object includes the new `status` field
-```
+<checkbox list>
 
 ### Release Readiness
+- Ready for release: <Yes/No>
+- Needs additional work: <Yes/No>
+```
 
-```yaml
-ready_for_release: Yes if all checklist items pass; No otherwise
-needs_additional_work: No by default; Yes if known gaps remain
+Present the rendered body and the inferred title to the user and ask:
+> "Does this PR look correct? Reply Yes to create it, or paste corrections."
+
+
+---
+
+## Step 7 — Create the PR
+
+```
+mcp__github__create_pull_request {
+  owner: "<OWNER>",
+  repo: "<REPO>",
+  title: "<PR title>",
+  body: "<rendered PR body>",
+  head: "<current branch>",
+  base: "<BASE_BRANCH>"
+}
 ```
 
 ---
 
-## Constraints
+## Step 8 — Report
 
-```yaml
-- Do not omit any section from .github/pull_request_template.md
-- All Yes/No fields must be filled — never leave blank
-- Link the PR to the ClickUp task ID found in the branch name
-- Use professional, concise language
-- Max 1 temp file created (.github/.pr_body_temp.md) — delete after PR creation
+```
+## Pull Request Created
+
+Title:  <title>
+URL:    <pr_url>
+Base:   <BASE_BRANCH> <- <current branch>
+Files:  <count> changed
 ```
 
----
-
-## Return Payload
-
-```yaml
-status: success | blocked
-pr_url: https://github.com/[OWNER]/[REPO]/pull/[NUMBER] # if option A used
-pr_body_path: .github/.pr_body_temp.md # if option B used
-labels_applied: [list]
-reviewers_requested: [list]
-blockers: [list — empty if none]
-```
-
----
-
-```yaml
-version: 1.0.0
-```
+Store `PR_URL` and `PR_NUMBER` in context — downstream skills or agents may need them.
